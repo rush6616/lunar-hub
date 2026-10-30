@@ -1,6 +1,6 @@
 -- language: Lua (Roblox Luau), file: lunar_hub_afk_farm.lua
 -- target: Madium executor
--- OBJETIVO: Full AFK com checagem de evento (Trem e Boss).
+-- OBJETIVO: Full AFK com checagem de evento e Interface Luna.
 
 local Players = game:GetService("Players")
 local VirtualUser = game:GetService("VirtualUser")
@@ -17,7 +17,7 @@ local estadoAFK = { ativo = false }
 local estadoPumpkin = { ativo = false }
 local estadoBoss = { ativo = false }
 local estadoFull = { ativo = false }
-local bossVivo = false -- Trava de prioridade
+local bossVivo = false
 
 local config = { teclaMenu = Enum.KeyCode.RightControl.Name, interface_aberta = false }
 local CONFIG_FILE = "lunar_hub_config.json"
@@ -161,7 +161,7 @@ local function bossAindaVivo()
 end
 
 -- ==========================================
--- MODO FULL AFK (CICLO PRECISO E ANTI-TRAVA)
+-- MODO FULL AFK (CICLO PRECISO)
 -- ==========================================
 task.spawn(function()
     while task.wait(1) do
@@ -170,44 +170,34 @@ task.spawn(function()
             continue 
         end
         
-        bossVivo = true -- Pausa as abóboras
-
-        -- Tenta comprar o ticket
+        bossVivo = true
         comprarTicket()
         task.wait(1.5)
         
-        -- Tenta embarcar (checa se o trem existe e ta ativo)
         local embarcou = embarcarTrem()
         
         if not embarcou then
-            print("[-] O trem nao esta disponivel (Evento acabou?). Aguardando 60s...")
-            task.wait(60) -- Espera 1 minuto pro evento voltar
+            print("[-] O trem nao esta disponivel. Aguardando 60s...")
+            task.wait(60)
         else
             task.wait(3)
-            
-            print("[*] FULL AFK: Indo pro Boss...")
             irProBoss()
             task.wait(2)
-            
-            print("[*] FULL AFK: Clicando em Fight...")
             clicarNoFight()
             
-            print("[*] FULL AFK: Monitorando a vida do Boss...")
             local tempoInicio = os.clock()
             while bossAindaVivo() and (os.clock() - tempoInicio < 45) do
-                task.wait(1) -- Checa a cada 1 segundo
+                task.wait(1)
             end
-            
-            print("[+] Boss morreu (ou tempo esgotou). Esperando loot...")
             task.wait(2) 
         end
         
-        bossVivo = false -- Libera as abóboras
+        bossVivo = false
     end
 end)
 
 -- ==========================================
--- AUTO BOSS SOLO (COM MONITORAMENTO)
+-- AUTO BOSS SOLO
 -- ==========================================
 task.spawn(function()
     while task.wait(1.5) do 
@@ -227,7 +217,7 @@ task.spawn(function()
 end)
 
 -- ==========================================
--- AUTO COLETAR ABÓBORAS (CHECAGEM DE EVENTO)
+-- AUTO COLETAR ABÓBORAS
 -- ==========================================
 task.spawn(function()
     while task.wait(0.5) do
@@ -276,172 +266,61 @@ task.spawn(function()
 end)
 
 -- ==========================================
--- BOLINHA FLUTUANTE (DRAG)
+-- CARREGANDO A INTERFACE (LUNA)
 -- ==========================================
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "LunarHubBtn"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.IgnoreGuiInset = true
-ScreenGui.DisplayOrder = 999
-ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+local Luna = loadstring(game:HttpGet("https://raw.githubusercontent.com/Nebula-Softworks/Luna-Interface-Suite/refs/heads/master/source.lua", true))()
 
-local BotaoFlutuante = Instance.new("ImageButton")
-BotaoFlutuante.Size = UDim2.new(0, 60, 0, 60)
-BotaoFlutuante.Position = UDim2.new(0, 20, 0.5, -30)
-BotaoFlutuante.BackgroundColor3 = Color3.fromRGB(11, 19, 43)
-BotaoFlutuante.Image = "rbxassetid://82780319797698" 
-BotaoFlutuante.ScaleType = Enum.ScaleType.Crop
-BotaoFlutuante.Active = true
-BotaoFlutuante.Visible = true
-BotaoFlutuante.Parent = ScreenGui
-
-local Corner = Instance.new("UICorner")
-Corner.CornerRadius = UDim.new(1, 0)
-Corner.Parent = BotaoFlutuante
-
-local Stroke = Instance.new("UIStroke")
-Stroke.Color = Color3.fromRGB(91, 192, 190)
-Stroke.Thickness = 3
-Stroke.Parent = BotaoFlutuante
-
-local arrastando, arrastou, startPos, startMouse = false, false, nil, nil
-
-BotaoFlutuante.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        arrastando = true
-        arrastou = false
-        startMouse = input.Position
-        startPos = BotaoFlutuante.Position
-    end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-    if arrastando and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        local delta = input.Position - startMouse
-        if math.abs(delta.X) > 5 or math.abs(delta.Y) > 5 then
-            arrastou = true
-            BotaoFlutuante.Position = UDim2.new(
-                startPos.X.Scale, startPos.X.Offset + delta.X,
-                startPos.Y.Scale, startPos.Y.Offset + delta.Y
-            )
-        end
-    end
-end)
-
-UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        arrastando = false
-    end
-end)
-
--- ==========================================
--- CARREGANDO A INTERFACE (WINDUI) E TEMA LUNAR
--- ==========================================
-local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
-
-pcall(function()
-    WindUI:AddTheme({
-        Name = "LunarTheme",
-        Accent = Color3.fromRGB(91, 192, 190),
-        Background = Color3.fromRGB(11, 19, 43),
-        Outline = Color3.fromRGB(28, 37, 65),
-        Text = Color3.fromRGB(244, 244, 249),
-        Placeholder = Color3.fromRGB(106, 123, 158),
-        Button = Color3.fromRGB(28, 37, 65),
-        Icon = Color3.fromRGB(91, 192, 190),
-    })
-end)
-
-local Window = WindUI:CreateWindow({
-    Title = "Lunar Hub",
-    Author = "por rush",
-    Folder = "LunarHub",
-    Size = UDim2.fromOffset(500, 400),
-    Theme = "LunarTheme", 
-    Transparent = true,
+local Window = Luna:CreateWindow({
+    Name = "Lunar Hub",
+    Subtitle = "Farm",
+    LogoID = "82795327169782",
+    LoadingEnabled = true,
+    LoadingTitle = "Lunar Hub",
+    LoadingSubtitle = "Carregando...",
+    KeySystem = false
 })
 
-local function fecharMenu()
-    pcall(function()
-        if Window.Close then Window:Close() end
-    end)
-    config.interface_aberta = false
-    BotaoFlutuante.Visible = true 
-end
-
-local function abrirMenu()
-    pcall(function()
-        if Window.Open then Window:Open() end
-    end)
-    config.interface_aberta = true
-    BotaoFlutuante.Visible = false 
-end
-
-task.spawn(function()
-    task.wait(0.5)
-    fecharMenu()
-end)
-
-BotaoFlutuante.MouseButton1Click:Connect(function()
-    if not arrastou then abrirMenu() end
-end)
-
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed then return end
-    local keyName = tostring(input.KeyCode):gsub("Enum.KeyCode.", "")
-    if keyName == config.teclaMenu then
-        if config.interface_aberta then
-            fecharMenu()
-        else
-            abrirMenu()
-        end
-    end
-end)
+local MainTab = Window:CreateTab({ Name = "Ocean Event" })
+local ConfigTab = Window:CreateTab({ Name = "Config" })
 
 -- ==========================================
--- ABAS
+-- INTERFACE DA LUNA
 -- ==========================================
-local MainTab = Window:Tab({ Title = "Ocean Event", Icon = "shell" })
-local ConfigTab = Window:Tab({ Title = "Config", Icon = "settings" })
-
--- ==========================================
--- INTERFACE DA WINDUI
--- ==========================================
-MainTab:Toggle({
-    Title = "MODO FULL AFK (Preciso)",
-    Desc = "Espera o boss morrer e o trem spawnar.",
-    Value = false,
+MainTab:CreateToggle({
+    Name = "MODO FULL AFK (Preciso)",
+    Description = "Espera o boss morrer e o trem spawnar.",
+    CurrentValue = false,
     Callback = function(Value)
         estadoFull.ativo = Value
-    end,
+    end
 })
 
-MainTab:Divider()
+MainTab:CreateDivider()
 
-MainTab:Toggle({
-    Title = "Auto Boss Solo",
-    Desc = "Vai pro boss e monitora até ele morrer.",
-    Value = false,
+MainTab:CreateToggle({
+    Name = "Auto Boss Solo",
+    Description = "Vai pro boss e monitora até ele morrer.",
+    CurrentValue = false,
     Callback = function(Value)
         estadoBoss.ativo = Value
-    end,
+    end
 })
 
-MainTab:Button({
-    Title = "Comprar Ticket e Embarçar",
-    Desc = "Manual: Invoca o Remote e embarca.",
+MainTab:CreateButton({
+    Name = "Comprar Ticket e Embarçar",
+    Description = "Manual: Invoca o Remote e embarca.",
     Callback = function()
         task.spawn(comprarTicket)
         task.spawn(embarcarTrem)
-    end,
+    end
 })
 
-MainTab:Divider()
+MainTab:CreateDivider()
 
-MainTab:Toggle({
-    Title = "Auto Coletar Abóboras",
-    Desc = "Só coleta se o evento estiver ativo.",
-    Value = false,
+MainTab:CreateToggle({
+    Name = "Auto Coletar Abóboras",
+    Description = "Só coleta se o evento estiver ativo.",
+    CurrentValue = false,
     Callback = function(Value)
         estadoPumpkin.ativo = Value
         if not Value then
@@ -452,43 +331,38 @@ MainTab:Toggle({
                 end
             end
         end
-    end,
+    end
 })
 
-MainTab:Divider()
+MainTab:CreateDivider()
 
-MainTab:Toggle({
-    Title = "Anti-AFK Hardcore",
-    Desc = "Impede o kick de 20 minutos.",
-    Value = false, 
+MainTab:CreateToggle({
+    Name = "Anti-AFK Hardcore",
+    Description = "Impede o kick de 20 minutos.",
+    CurrentValue = false, 
     Callback = function(Value)
         estadoAFK.ativo = Value
-    end,
+    end
 })
 
-MainTab:Divider()
-
--- ==========================================
--- CONFIGURAÇÕES
--- ==========================================
-ConfigTab:Dropdown({
-    Title = "Tecla para Minimizar/Abrir",
-    Desc = "Muda o atalho que esconde ou mostra o menu.",
-    Values = {"RightControl", "LeftControl", "RightShift", "LeftShift", "Insert", "Home", "End", "K", "F1"},
-    Value = config.teclaMenu,
-    Callback = function(Option)
-        config.teclaMenu = Option
+ConfigTab:CreateInput({
+    Name = "Tecla para Minimizar/Abrir",
+    Description = "Muda o atalho (ex: RightControl).",
+    PlaceholderText = "RightControl",
+    CurrentValue = config.teclaMenu,
+    Callback = function(Text)
+        config.teclaMenu = Text
         salvarConfig()
-        print("[+] Atalho alterado para: " .. Option)
-    end,
+        print("[+] Atalho alterado para: " .. Text)
+    end
 })
 
-ConfigTab:Button({
-    Title = "Fechar Menu (Minimizar)",
-    Desc = "Esconde o menu e traz a bolinha de volta.",
+ConfigTab:CreateButton({
+    Name = "Fechar Menu",
+    Description = "Fecha a interface.",
     Callback = function()
-        fecharMenu()
-    end,
+        Window:Hide() -- Comando correto da Luna para fechar
+    end
 })
 
 print("[+] Lunar Hub (por rush) carregado.")
