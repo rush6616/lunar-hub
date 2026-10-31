@@ -1,6 +1,6 @@
 -- language: Lua (Roblox Luau), file: lunar_hub_afk_farm.lua
 -- target: Madium executor
--- OBJETIVO: Full AFK com checagem de evento e Interface Luna.
+-- OBJETIVO: Full AFK (15s Abóbora -> Boss) com Interface Luna.
 
 local Players = game:GetService("Players")
 local VirtualUser = game:GetService("VirtualUser")
@@ -160,8 +160,51 @@ local function bossAindaVivo()
     return (playerGui:FindFirstChild("BossFightHPBar", true) ~= nil) or (playerGui:FindFirstChild("BossFight", true) ~= nil)
 end
 
+-- Função que pega a abóbora mais perto (só usada no modo de 15s)
+local function coletarAbobora()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    for _, v in pairs(char:GetDescendants()) do
+        if v:IsA("BasePart") then v.CanCollide = false end
+    end
+
+    local closestPrompt = nil
+    local shortestDist = math.huge
+
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("ProximityPrompt") then
+            local objectText, actionText = obj.ObjectText:lower(), obj.ActionText:lower()
+            local isPumpkin = (objectText == "abóbora" or objectText == "pumpkin" or objectText:find("abóbora"))
+            local isCollect = (actionText == "collect" or actionText:find("collect"))
+            
+            if isPumpkin and isCollect and obj.Enabled then
+                local part = obj.Parent
+                if part and part:IsA("BasePart") then
+                    local dist = (hrp.Position - part.Position).Magnitude
+                    if dist < shortestDist then
+                        shortestDist = dist
+                        closestPrompt = { prompt = obj, part = part }
+                    end
+                end
+            end
+        end
+    end
+
+    if closestPrompt then
+        hrp.CFrame = CFrame.new(closestPrompt.part.Position)
+        task.wait(0.1)
+        if type(fireproximityprompt) == "function" then
+            pcall(fireproximityprompt, closestPrompt.prompt)
+        end
+        task.wait(0.4)
+    end
+end
+
 -- ==========================================
--- MODO FULL AFK (CICLO PRECISO)
+-- MODO FULL AFK (15s Abóbora -> Boss)
 -- ==========================================
 task.spawn(function()
     while task.wait(1) do
@@ -170,6 +213,7 @@ task.spawn(function()
             continue 
         end
         
+        -- 1. TREM E TICKET
         bossVivo = true
         comprarTicket()
         task.wait(1.5)
@@ -181,13 +225,26 @@ task.spawn(function()
             task.wait(60)
         else
             task.wait(3)
+            
+            -- 2. FARM DE ABÓBORA (15 SEGUNDOS CRAVADOS)
+            print("[*] FULL AFK: Coletando abóboras por 15s...")
+            local tempoInicioAbobora = os.clock()
+            
+            while (os.clock() - tempoInicioAbobora < 15) and estadoFull.ativo do
+                coletarAbobora()
+                task.wait(0.2)
+            end
+            
+            -- 3. BOSS (DEPOIS DOS 15s)
+            print("[*] FULL AFK: Tempo esgotado. Indo pro Boss...")
             irProBoss()
             task.wait(2)
             clicarNoFight()
             
-            local tempoInicio = os.clock()
-            while bossAindaVivo() and (os.clock() - tempoInicio < 45) do
+            local tempoInicioBoss = os.clock()
+            while bossAindaVivo() and (os.clock() - tempoInicioBoss < 45) do
                 task.wait(1)
+                clicarNoFight()
             end
             task.wait(2) 
         end
@@ -217,56 +274,17 @@ task.spawn(function()
 end)
 
 -- ==========================================
--- AUTO COLETAR ABÓBORAS
+-- AUTO COLETAR ABÓBORAS (MODO SOLO)
 -- ==========================================
 task.spawn(function()
     while task.wait(0.5) do
-        if not estadoPumpkin.ativo or bossVivo then continue end
-        
-        local char = LocalPlayer.Character
-        if not char then continue end
-        local hrp = char:FindFirstChild("HumanoidRootPart")
-        if not hrp then continue end
-
-        for _, v in pairs(char:GetDescendants()) do
-            if v:IsA("BasePart") then v.CanCollide = false end
-        end
-
-        local closestPrompt = nil
-        local shortestDist = math.huge
-
-        for _, obj in ipairs(workspace:GetDescendants()) do
-            if obj:IsA("ProximityPrompt") then
-                local objectText, actionText = obj.ObjectText:lower(), obj.ActionText:lower()
-                local isPumpkin = (objectText == "abóbora" or objectText == "pumpkin" or objectText:find("abóbora"))
-                local isCollect = (actionText == "collect" or actionText:find("collect"))
-                
-                if isPumpkin and isCollect and obj.Enabled then
-                    local part = obj.Parent
-                    if part and part:IsA("BasePart") then
-                        local dist = (hrp.Position - part.Position).Magnitude
-                        if dist < shortestDist then
-                            shortestDist = dist
-                            closestPrompt = { prompt = obj, part = part }
-                        end
-                    end
-                end
-            end
-        end
-
-        if closestPrompt then
-            hrp.CFrame = CFrame.new(closestPrompt.part.Position)
-            task.wait(0.1)
-            if type(fireproximityprompt) == "function" then
-                pcall(fireproximityprompt, closestPrompt.prompt)
-            end
-            task.wait(0.4)
-        end
+        if not estadoPumpkin.ativo or bossVivo or estadoFull.ativo then continue end
+        coletarAbobora()
     end
 end)
 
 -- ==========================================
--- CARREGANDO A INTERFACE (LUNA)
+-- INTERFACE (LUNA)
 -- ==========================================
 local Luna = loadstring(game:HttpGet("https://raw.githubusercontent.com/Nebula-Softworks/Luna-Interface-Suite/refs/heads/master/source.lua", true))()
 
@@ -283,12 +301,9 @@ local Window = Luna:CreateWindow({
 local MainTab = Window:CreateTab({ Name = "Ocean Event" })
 local ConfigTab = Window:CreateTab({ Name = "Config" })
 
--- ==========================================
--- INTERFACE DA LUNA
--- ==========================================
 MainTab:CreateToggle({
-    Name = "MODO FULL AFK (Preciso)",
-    Description = "Espera o boss morrer e o trem spawnar.",
+    Name = "MODO FULL AFK (15s Abóbora)",
+    Description = "Farm 15s de abóbora e depois vai pro boss.",
     CurrentValue = false,
     Callback = function(Value)
         estadoFull.ativo = Value
@@ -318,19 +333,11 @@ MainTab:CreateButton({
 MainTab:CreateDivider()
 
 MainTab:CreateToggle({
-    Name = "Auto Coletar Abóboras",
-    Description = "Só coleta se o evento estiver ativo.",
+    Name = "Auto Coletar Abóboras (Solo)",
+    Description = "Coleta sem parar se o boss não estiver ativo.",
     CurrentValue = false,
     Callback = function(Value)
         estadoPumpkin.ativo = Value
-        if not Value then
-            local char = LocalPlayer.Character
-            if char then
-                for _, v in pairs(char:GetDescendants()) do
-                    if v:IsA("BasePart") then v.CanCollide = true end
-                end
-            end
-        end
     end
 })
 
@@ -361,7 +368,7 @@ ConfigTab:CreateButton({
     Name = "Fechar Menu",
     Description = "Fecha a interface.",
     Callback = function()
-        Window:Hide() -- Comando correto da Luna para fechar
+        Window:Hide()
     end
 })
 
