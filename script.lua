@@ -1,6 +1,6 @@
--- language: Lua (Roblox Luau), file: lunar_hub_afk_farm.lua
+-- language: Lua (Roblox Luau), file: lunar_hub_clean.lua
 -- target: Madium executor
--- OBJETIVO: Full AFK (15s Abóbora -> Boss) com Interface Luna.
+-- OBJETIVO: Base Lunar Hub + Auto Buy Animal (Multi-Seleção).
 
 local Players = game:GetService("Players")
 local VirtualUser = game:GetService("VirtualUser")
@@ -14,15 +14,10 @@ local Camera = workspace.CurrentCamera
 -- ESTADO GLOBAL & CONFIG
 -- ==========================================
 local estadoAFK = { ativo = false }
-local estadoPumpkin = { ativo = false }
-local estadoBoss = { ativo = false }
-local estadoFull = { ativo = false }
-local bossVivo = false
+local estadoAutoBuy = { ativo = false, items = {"Buffalo"} }
 
 local config = { teclaMenu = Enum.KeyCode.RightControl.Name, interface_aberta = false }
 local CONFIG_FILE = "lunar_hub_config.json"
-
-local BOSS_POS = Vector3.new(-620.59, -80.02, -243.30)
 
 local function salvarConfig()
     if writefile then
@@ -82,204 +77,34 @@ task.spawn(function()
 end)
 
 -- ==========================================
--- LÓGICAS SEPARADAS
+-- AUTO BUY ANIMAL (MULTI)
 -- ==========================================
-local function comprarTicket()
-    local remotes = ReplicatedStorage:FindFirstChild("Remotes")
-    local ghostTrainRemotes = remotes and remotes:FindFirstChild("GhostTrain")
-    local buyTicketRemote = ghostTrainRemotes and ghostTrainRemotes:FindFirstChild("BuyTicket")
-    if buyTicketRemote then
-        pcall(function() return buyTicketRemote:InvokeServer() end)
-        return true
-    end
-    return false
-end
-
-local function embarcarTrem()
-    local char = LocalPlayer.Character
-    if not char then return false end
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return false end
-
-    local trainArrive = workspace:FindFirstChild("TrainArrive", true)
-    if trainArrive then
-        local prompt = trainArrive:FindFirstChild("BoardTrainPrompt")
-        if prompt and prompt.Enabled then
-            hrp.CFrame = trainArrive.CFrame * CFrame.new(0, 3, 0)
-            task.wait(0.5)
-            if type(fireproximityprompt) == "function" then
-                pcall(fireproximityprompt, prompt)
-            end
-            return true
-        end
-    end
-    return false
-end
-
-local function irProBoss()
-    local char = LocalPlayer.Character
-    if char and char:FindFirstChild("HumanoidRootPart") then
-        char.HumanoidRootPart.CFrame = CFrame.new(BOSS_POS)
+local function comprarAnimal(itemName)
+    local shopRemotes = ReplicatedStorage:FindFirstChild("Remotes")
+    local shopRemote = shopRemotes and shopRemotes:FindFirstChild("Shop")
+    local buyRemote = shopRemote and shopRemote:FindFirstChild("Buy")
+    
+    if buyRemote then
+        pcall(function()
+            buyRemote:FireServer("Animal", {
+                BuyAll = true,
+                ItemName = itemName
+            })
+        end)
     end
 end
 
-local function clicarNoFight()
-    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-    if not playerGui then return false end
-
-    for _, gui in ipairs(playerGui:GetDescendants()) do
-        if gui:IsA("TextButton") or gui:IsA("ImageButton") then
-            local texto, nome = "", gui.Name:lower()
-            if gui:IsA("TextButton") then texto = gui.Text:lower()
-            elseif gui:IsA("ImageButton") then
-                local label = gui:FindFirstChildWhichIsA("TextLabel")
-                if label then texto = label.Text:lower() end
-            end
-            
-            if texto:find("fight") or nome:find("fight") then
-                if getgenv().firesignal then pcall(function() getgenv().firesignal(gui.Activated) end) end
-                pcall(function() gui.Activated:Fire() end)
-                pcall(function()
-                    if mousemoveabs and mouse1click then
-                        local pos, size = gui.AbsolutePosition, gui.AbsoluteSize
-                        mousemoveabs(pos.X + (size.X / 2), pos.Y + (size.Y / 2))
-                        task.wait(0.1)
-                        mouse1click()
-                    end
-                end)
-                return true
-            end
-        end
-    end
-    return false
-end
-
-local function bossAindaVivo()
-    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-    if not playerGui then return false end
-    return (playerGui:FindFirstChild("BossFightHPBar", true) ~= nil) or (playerGui:FindFirstChild("BossFight", true) ~= nil)
-end
-
--- Função que pega a abóbora mais perto (só usada no modo de 15s)
-local function coletarAbobora()
-    local char = LocalPlayer.Character
-    if not char then return end
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
-
-    for _, v in pairs(char:GetDescendants()) do
-        if v:IsA("BasePart") then v.CanCollide = false end
-    end
-
-    local closestPrompt = nil
-    local shortestDist = math.huge
-
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("ProximityPrompt") then
-            local objectText, actionText = obj.ObjectText:lower(), obj.ActionText:lower()
-            local isPumpkin = (objectText == "abóbora" or objectText == "pumpkin" or objectText:find("abóbora"))
-            local isCollect = (actionText == "collect" or actionText:find("collect"))
-            
-            if isPumpkin and isCollect and obj.Enabled then
-                local part = obj.Parent
-                if part and part:IsA("BasePart") then
-                    local dist = (hrp.Position - part.Position).Magnitude
-                    if dist < shortestDist then
-                        shortestDist = dist
-                        closestPrompt = { prompt = obj, part = part }
-                    end
-                end
-            end
-        end
-    end
-
-    if closestPrompt then
-        hrp.CFrame = CFrame.new(closestPrompt.part.Position)
-        task.wait(0.1)
-        if type(fireproximityprompt) == "function" then
-            pcall(fireproximityprompt, closestPrompt.prompt)
-        end
-        task.wait(0.4)
-    end
-end
-
--- ==========================================
--- MODO FULL AFK (15s Abóbora -> Boss)
--- ==========================================
 task.spawn(function()
     while task.wait(1) do
-        if not estadoFull.ativo then 
-            bossVivo = false
-            continue 
+        if not estadoAutoBuy.ativo then continue end
+        
+        -- Passa por cada animal selecionado na lista
+        for _, item in ipairs(estadoAutoBuy.items) do
+            comprarAnimal(item)
+            task.wait(0.3) -- Pequeno delay entre cada compra
         end
         
-        -- 1. TREM E TICKET
-        bossVivo = true
-        comprarTicket()
-        task.wait(1.5)
-        
-        local embarcou = embarcarTrem()
-        
-        if not embarcou then
-            print("[-] O trem nao esta disponivel. Aguardando 60s...")
-            task.wait(60)
-        else
-            task.wait(3)
-            
-            -- 2. FARM DE ABÓBORA (15 SEGUNDOS CRAVADOS)
-            print("[*] FULL AFK: Coletando abóboras por 15s...")
-            local tempoInicioAbobora = os.clock()
-            
-            while (os.clock() - tempoInicioAbobora < 15) and estadoFull.ativo do
-                coletarAbobora()
-                task.wait(0.2)
-            end
-            
-            -- 3. BOSS (DEPOIS DOS 15s)
-            print("[*] FULL AFK: Tempo esgotado. Indo pro Boss...")
-            irProBoss()
-            task.wait(2)
-            clicarNoFight()
-            
-            local tempoInicioBoss = os.clock()
-            while bossAindaVivo() and (os.clock() - tempoInicioBoss < 45) do
-                task.wait(1)
-                clicarNoFight()
-            end
-            task.wait(2) 
-        end
-        
-        bossVivo = false
-    end
-end)
-
--- ==========================================
--- AUTO BOSS SOLO
--- ==========================================
-task.spawn(function()
-    while task.wait(1.5) do 
-        if not estadoBoss.ativo or estadoFull.ativo then 
-            if not estadoBoss.ativo and not estadoFull.ativo then bossVivo = false end
-            continue 
-        end
-        
-        bossVivo = true
-        
-        if not bossAindaVivo() then
-            irProBoss()
-            task.wait(2) 
-            clicarNoFight()
-        end
-    end
-end)
-
--- ==========================================
--- AUTO COLETAR ABÓBORAS (MODO SOLO)
--- ==========================================
-task.spawn(function()
-    while task.wait(0.5) do
-        if not estadoPumpkin.ativo or bossVivo or estadoFull.ativo then continue end
-        coletarAbobora()
+        task.wait(0.5) -- Delay antes de recomeçar o loop
     end
 end)
 
@@ -290,7 +115,7 @@ local Luna = loadstring(game:HttpGet("https://raw.githubusercontent.com/Nebula-S
 
 local Window = Luna:CreateWindow({
     Name = "Lunar Hub",
-    Subtitle = "Farm",
+    Subtitle = "Auto Buy",
     LogoID = "82795327169782",
     LoadingEnabled = true,
     LoadingTitle = "Lunar Hub",
@@ -298,46 +123,35 @@ local Window = Luna:CreateWindow({
     KeySystem = false
 })
 
-local MainTab = Window:CreateTab({ Name = "Ocean Event" })
+local MainTab = Window:CreateTab({ Name = "Principal" })
 local ConfigTab = Window:CreateTab({ Name = "Config" })
 
-MainTab:CreateToggle({
-    Name = "MODO FULL AFK (15s Abóbora)",
-    Description = "Farm 15s de abóbora e depois vai pro boss.",
-    CurrentValue = false,
-    Callback = function(Value)
-        estadoFull.ativo = Value
+-- ==========================================
+-- LISTA DE ANIMAIS
+-- ==========================================
+local listaAnimais = {
+    "Buffalo", "Ostrich", "Fish", "Zebra", "Toucan", "Seal", 
+    "Elephant", "Crab", "Tiger", "Turtle", "Giraffe", 
+    "Crocodile", "Gorilla", "Shark", "Whale", "Lion"
+}
+
+MainTab:CreateDropdown({
+    Name = "Animais Alvos",
+    Description = "Selecione um ou mais animais.",
+    Options = listaAnimais,
+    CurrentOption = {"Buffalo"},
+    MultipleOptions = true, -- AQUI PERMITE SELECIONAR VÁRIOS
+    Callback = function(Options)
+        estadoAutoBuy.items = Options -- Salva a lista completa de selecionados
     end
 })
 
-MainTab:CreateDivider()
-
 MainTab:CreateToggle({
-    Name = "Auto Boss Solo",
-    Description = "Vai pro boss e monitora até ele morrer.",
-    CurrentValue = false,
+    Name = "Auto Buy Animal",
+    Description = "Compra todos os animais selecionados.",
+    CurrentValue = false, 
     Callback = function(Value)
-        estadoBoss.ativo = Value
-    end
-})
-
-MainTab:CreateButton({
-    Name = "Comprar Ticket e Embarçar",
-    Description = "Manual: Invoca o Remote e embarca.",
-    Callback = function()
-        task.spawn(comprarTicket)
-        task.spawn(embarcarTrem)
-    end
-})
-
-MainTab:CreateDivider()
-
-MainTab:CreateToggle({
-    Name = "Auto Coletar Abóboras (Solo)",
-    Description = "Coleta sem parar se o boss não estiver ativo.",
-    CurrentValue = false,
-    Callback = function(Value)
-        estadoPumpkin.ativo = Value
+        estadoAutoBuy.ativo = Value
     end
 })
 
@@ -372,4 +186,4 @@ ConfigTab:CreateButton({
     end
 })
 
-print("[+] Lunar Hub (por rush) carregado.")
+print("[+] Lunar Hub (Auto Buy Multi) carregado.")
